@@ -2,19 +2,31 @@ import { broadcastProgress } from './state.js';
 
 const PAGE_SIZE = 100;
 
-async function spotifyTokenFn() {
-  try {
-    const res = await fetch(
-      'https://open.spotify.com/get_access_token?reason=transport&productType=web_player',
-      { credentials: 'include', cache: 'reload' }
-    );
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch { return { ok: false, error: `Spotify 탭을 새로고침 후 다시 시도하세요. (서버 응답: ${text.slice(0, 60)})` }; }
-    if (!data.accessToken || data.isAnonymous) return { ok: false, error: 'Spotify에 로그인되어 있는지 확인하세요.' };
-    return { ok: true, data: data.accessToken };
-  } catch (e) { return { ok: false, error: e.message }; }
+function spotifyTokenFn() {
+  return new Promise(resolve => {
+    const origFetch = window.fetch;
+    let done = false;
+
+    window.fetch = function(input, init, ...rest) {
+      const url = (typeof input === 'string' ? input : input?.url) || '';
+      if (!done && url.includes('api.spotify.com')) {
+        const auth = (init?.headers?.Authorization || init?.headers?.authorization) ?? '';
+        if (auth.startsWith('Bearer ')) {
+          done = true;
+          window.fetch = origFetch;
+          resolve({ ok: true, data: auth.slice(7) });
+        }
+      }
+      return origFetch.call(this, input, init, ...rest);
+    };
+
+    setTimeout(() => {
+      if (!done) {
+        window.fetch = origFetch;
+        resolve({ ok: false, error: 'Spotify API 요청을 감지하지 못했습니다. Spotify에서 음악을 재생 중인지 확인하세요.' });
+      }
+    }, 10000);
+  });
 }
 
 async function getToken(spotifyTabId) {
