@@ -3,30 +3,22 @@ import { broadcastProgress } from './state.js';
 const PAGE_SIZE = 100;
 
 // Spotify 탭에 주입해서 액세스 토큰만 가져옴
-async function spotifyTokenFn() {
+async function getToken() {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 10000);
   try {
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(
       'https://open.spotify.com/get_access_token?reason=transport&productType=web_player',
       { credentials: 'include', signal: controller.signal }
     );
     clearTimeout(tid);
     const data = await res.json();
-    if (!data.accessToken || data.isAnonymous) return { ok: false, error: 'Spotify에 로그인되어 있는지 확인하세요.' };
-    return { ok: true, data: data.accessToken };
+    if (!data.accessToken || data.isAnonymous) throw new Error('Spotify에 로그인되어 있는지 확인하세요.');
+    return data.accessToken;
   } catch (e) {
-    return { ok: false, error: e.name === 'AbortError' ? '토큰 요청 시간 초과 — Spotify 탭을 확인하세요.' : e.message };
+    clearTimeout(tid);
+    throw new Error(e.name === 'AbortError' ? '토큰 요청 시간 초과 — Spotify에 로그인했는지 확인하세요.' : e.message);
   }
-}
-
-async function getToken(spotifyTabId) {
-  const res = await chrome.scripting.executeScript({
-    target: { tabId: spotifyTabId }, world: 'MAIN', func: spotifyTokenFn, args: [],
-  });
-  const r = res[0]?.result;
-  if (!r?.ok) throw new Error(r?.error || '토큰 획득 실패');
-  return r.data;
 }
 
 export async function fetchSpotifySongs(playlistUrl, spotifyTabId, shouldStop) {
@@ -34,7 +26,7 @@ export async function fetchSpotifySongs(playlistUrl, spotifyTabId, shouldStop) {
   if (!playlistId) throw new Error('올바른 Spotify 플레이리스트 URL을 입력해주세요.');
 
   broadcastProgress({ step: 'Spotify 토큰 가져오는 중...' });
-  const token   = await getToken(spotifyTabId);
+  const token   = await getToken();
   const headers = { Authorization: `Bearer ${token}` };
 
   broadcastProgress({ step: '플레이리스트 정보 로딩 중...' });
