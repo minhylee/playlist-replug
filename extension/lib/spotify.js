@@ -3,30 +3,43 @@ import { broadcastProgress } from './state.js';
 const PAGE_SIZE = 100;
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-async function getPublicToken(playlistId) {
-  const res = await fetch(`https://open.spotify.com/playlist/${playlistId}`, {
-    headers: { 'User-Agent': UA },
-  });
-  const html = await res.text();
+async function fetchHtml(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': UA } });
+  return res.text();
+}
 
-  // 실제 HTML에서 패턴 찾기
-  const sessionMatch = html.match(/<script[^>]+id="session"[^>]*>([^<]+)<\/script>/);
-  if (sessionMatch) {
-    const session = JSON.parse(sessionMatch[1]);
-    if (session.accessToken) return session.accessToken;
+function extractToken(html) {
+  // script id="session" 방식
+  const m1 = html.match(/<script[^>]+id="session"[^>]*>([^<]+)<\/script>/);
+  if (m1) { try { const t = JSON.parse(m1[1])?.accessToken; if (t) return t; } catch {} }
+
+  // __NEXT_DATA__ 방식
+  const m2 = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/);
+  if (m2) {
+    try {
+      const d = JSON.parse(m2[1]);
+      const t = d?.props?.pageProps?.accessToken || d?.props?.pageProps?.session?.accessToken;
+      if (t) return t;
+    } catch {}
   }
 
-  const nextDataMatch = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/);
-  if (nextDataMatch) {
-    const data = JSON.parse(nextDataMatch[1]);
-    const token = data?.props?.pageProps?.accessToken
-      || data?.props?.pageProps?.session?.accessToken;
+  // HTML 어딘가에 accessToken 값이 있는 경우
+  const m3 = html.match(/"accessToken"\s*:\s*"([^"]{20,})"/);
+  if (m3) return m3[1];
+
+  return null;
+}
+
+async function getPublicToken(playlistId) {
+  for (const url of [
+    `https://open.spotify.com/playlist/${playlistId}`,
+    `https://open.spotify.com/embed/playlist/${playlistId}`,
+  ]) {
+    const html = await fetchHtml(url);
+    const token = extractToken(html);
     if (token) return token;
   }
-
-  // 디버그: 실제 HTML 앞부분을 에러 메시지에 포함
-  const preview = html.replace(/\s+/g, ' ').slice(0, 200);
-  throw new Error(`세션 정보를 찾지 못했습니다. (HTTP ${res.status}, 응답: ${preview})`);
+  throw new Error('Spotify 세션 토큰을 찾지 못했습니다. 플레이리스트가 공개 상태인지 확인하세요.');
 }
 
 export async function fetchSpotifySongs(playlistUrl, shouldStop) {

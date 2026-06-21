@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (msg.bar  !== undefined) setBar(msg.bar);
     if (msg.log)  appendLog(msg.log, msg.logType || '');
     if (msg.error) {
+      stepText.textContent = '오류 발생';
       appendLog(`오류: ${msg.message}`, 'err');
       setJobActive(false);
     }
