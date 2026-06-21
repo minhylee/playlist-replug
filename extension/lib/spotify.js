@@ -8,11 +8,25 @@ async function getPublicToken(playlistId) {
     headers: { 'User-Agent': UA },
   });
   const html = await res.text();
-  const match = html.match(/<script[^>]+id="session"[^>]*>([^<]+)<\/script>/);
-  if (!match) throw new Error('Spotify 페이지에서 세션 정보를 찾지 못했습니다. 플레이리스트가 공개 상태인지 확인하세요.');
-  const session = JSON.parse(match[1]);
-  if (!session.accessToken) throw new Error('세션에서 토큰을 찾지 못했습니다.');
-  return session.accessToken;
+
+  // 실제 HTML에서 패턴 찾기
+  const sessionMatch = html.match(/<script[^>]+id="session"[^>]*>([^<]+)<\/script>/);
+  if (sessionMatch) {
+    const session = JSON.parse(sessionMatch[1]);
+    if (session.accessToken) return session.accessToken;
+  }
+
+  const nextDataMatch = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/);
+  if (nextDataMatch) {
+    const data = JSON.parse(nextDataMatch[1]);
+    const token = data?.props?.pageProps?.accessToken
+      || data?.props?.pageProps?.session?.accessToken;
+    if (token) return token;
+  }
+
+  // 디버그: 실제 HTML 앞부분을 에러 메시지에 포함
+  const preview = html.replace(/\s+/g, ' ').slice(0, 200);
+  throw new Error(`세션 정보를 찾지 못했습니다. (HTTP ${res.status}, 응답: ${preview})`);
 }
 
 export async function fetchSpotifySongs(playlistUrl, shouldStop) {
