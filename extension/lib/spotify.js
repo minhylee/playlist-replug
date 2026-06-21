@@ -1,42 +1,62 @@
 import { broadcastProgress } from './state.js';
 
-const BOT_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+const PAGE_SIZE = 100;
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-async function fetchPlaylistHtml(playlistId) {
-  const res = await fetch(`https://open.spotify.com/playlist/${playlistId}`, {
-    headers: { 'User-Agent': BOT_UA, 'Accept-Language': 'ko-KR,ko;q=0.9' },
+async function getEmbedToken(playlistId) {
+  const res = await fetch(`https://open.spotify.com/embed/playlist/${playlistId}`, {
+    headers: { 'User-Agent': UA },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.text();
-}
+  if (!res.ok) throw new Error(`엠베드 페이지 오류 (HTTP ${res.status})`);
+  const html = await res.text();
 
-function parseJsonLd(html) {
-  const songs = [];
-  for (const [, content] of html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)) {
-    try {
-      const data = JSON.parse(content);
-      if (data['@type'] !== 'MusicPlaylist' || !data.track?.length) continue;
-      for (const t of data.track) {
-        const artist = Array.isArray(t.byArtist)
-          ? t.byArtist.map(a => a.name).join(', ')
-          : (t.byArtist?.name || '');
-        if (t.name) songs.push({ title: t.name, artist });
-      }
-    } catch {}
-  }
-  return songs;
+  const nextData = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
+  if (!nextData) throw new Error('페이지 데이터를 찾지 못했습니다.');
+
+  const token = JSON.parse(nextData).props?.pageProps?.state?.data?.settings?.session?.accessToken;
+  if (!token) throw new Error('토큰을 찾지 못했습니다.');
+  return token;
 }
 
 export async function fetchSpotifySongs(playlistUrl, shouldStop) {
   const playlistId = playlistUrl.match(/playlist\/([A-Za-z0-9]+)/)?.[1];
   if (!playlistId) throw new Error('올바른 Spotify 플레이리스트 URL을 입력해주세요.');
 
-  broadcastProgress({ step: 'Spotify 플레이리스트 로딩 중...' });
-  const html  = await fetchPlaylistHtml(playlistId);
-  const songs = parseJsonLd(html);
+  broadcastProgress({ step: 'Spotify 토큰 가져오는 중...' });
+  const token   = await getEmbedToken(playlistId);
+  const headers = { Authorization: `Bearer ${token}`, 'User-Agent': UA };
 
-  if (!songs.length) throw new Error('트랙 정보를 찾지 못했습니다. 플레이리스트가 공개 상태인지 확인하세요.');
+  broadcastProgress({ step: '플레이리스트 정보 로딩 중...' });
+  const infoRes = await fetch(
+    `https://api.spotify.com/v1/playlists/${playlistId}?fields=name,tracks.total`,
+    { headers }
+  );
+  const info = await infoRes.json();
+  if (info.error) throw new Error(`Spotify API: ${info.error.message} (${info.error.status})`);
+  if (!info.tracks?.total) throw new Error('플레이리스트를 가져올 수 없습니다. URL을 확인하세요.');
 
-  broadcastProgress({ log: `총 ${songs.length}곡 가져옴`, logType: 'info' });
+  const totalCount = info.tracks.total;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  broadcastProgress({ log: `총 ${totalCount}곡 (${totalPages}페이지)`, logType: 'info' });
+
+  const songs = [];
+  for (let page = 0; page < totalPages; page++) {
+    if (shouldStop()) break;
+    broadcastProgress({ step: `${page + 1}/${totalPages}페이지 로딩 중...` });
+    const res  = await fetch(
+      `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}&fields=items(track(name,artists(name)))`,
+      { headers }
+    );
+    const data  = await res.json();
+    const items = data.items
+      ?.filter(item => item.track)
+      .map(item => ({
+        title:  item.track.name,
+        artist: item.track.artists.map(a => a.name).join(', '),
+      })) || [];
+    songs.push(...items);
+    broadcastProgress({ step: `${page + 1}/${totalPages}페이지: ${items.length}곡` });
+  }
+
   return songs;
 }
