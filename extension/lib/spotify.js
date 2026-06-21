@@ -2,44 +2,24 @@ import { broadcastProgress } from './state.js';
 
 const PAGE_SIZE = 100;
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const SPOTIFY_CLIENT_ID = 'd8a5ed958d274c2e8ee717e6a4b0971d';
 
-async function fetchHtml(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': UA } });
-  return res.text();
-}
-
-function extractToken(html) {
-  // script id="session" 방식
-  const m1 = html.match(/<script[^>]+id="session"[^>]*>([^<]+)<\/script>/);
-  if (m1) { try { const t = JSON.parse(m1[1])?.accessToken; if (t) return t; } catch {} }
-
-  // __NEXT_DATA__ 방식
-  const m2 = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/);
-  if (m2) {
-    try {
-      const d = JSON.parse(m2[1]);
-      const t = d?.props?.pageProps?.accessToken || d?.props?.pageProps?.session?.accessToken;
-      if (t) return t;
-    } catch {}
-  }
-
-  // HTML 어딘가에 accessToken 값이 있는 경우
-  const m3 = html.match(/"accessToken"\s*:\s*"([^"]{20,})"/);
-  if (m3) return m3[1];
-
-  return null;
-}
-
-async function getPublicToken(playlistId) {
-  for (const url of [
-    `https://open.spotify.com/playlist/${playlistId}`,
-    `https://open.spotify.com/embed/playlist/${playlistId}`,
-  ]) {
-    const html = await fetchHtml(url);
-    const token = extractToken(html);
-    if (token) return token;
-  }
-  throw new Error('Spotify 세션 토큰을 찾지 못했습니다. 플레이리스트가 공개 상태인지 확인하세요.');
+async function getAnonymousToken() {
+  const res = await fetch('https://clienttoken.spotify.com/v1/clienttoken', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      client_data: {
+        client_version: '1.0.0',
+        client_id: SPOTIFY_CLIENT_ID,
+        js_sdk_data: { device_brand: 'Apple', device_model: 'macos', os: 'macos', os_version: '10.15.7' },
+      },
+    }),
+  });
+  const data = await res.json();
+  const token = data.granted_token?.token;
+  if (!token) throw new Error(`Spotify 토큰 발급 실패: ${JSON.stringify(data).slice(0, 120)}`);
+  return token;
 }
 
 export async function fetchSpotifySongs(playlistUrl, shouldStop) {
@@ -47,7 +27,7 @@ export async function fetchSpotifySongs(playlistUrl, shouldStop) {
   if (!playlistId) throw new Error('올바른 Spotify 플레이리스트 URL을 입력해주세요.');
 
   broadcastProgress({ step: 'Spotify 토큰 가져오는 중...' });
-  const token   = await getPublicToken(playlistId);
+  const token   = await getAnonymousToken();
   const headers = { Authorization: `Bearer ${token}`, 'User-Agent': UA };
 
   broadcastProgress({ step: '플레이리스트 정보 로딩 중...' });
