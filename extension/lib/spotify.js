@@ -55,7 +55,11 @@ export async function fetchSpotifySongs(playlistUrl, shouldStop) {
     `https://api.spotify.com/v1/playlists/${playlistId}?fields=name,tracks.total`,
     { headers }
   );
-  const info = await infoRes.json();
+  const infoText = await infoRes.text();
+  let info;
+  try { info = JSON.parse(infoText); }
+  catch { throw new Error(`Spotify API 오류 (HTTP ${infoRes.status}): ${infoText.slice(0, 120)}`); }
+  if (info.error) throw new Error(`Spotify API: ${info.error.message} (${info.error.status})`);
   if (!info.tracks?.total) throw new Error('플레이리스트를 가져올 수 없습니다. URL을 확인하세요.');
 
   const totalCount = info.tracks.total;
