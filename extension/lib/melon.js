@@ -31,33 +31,21 @@ export async function fetchMelonSongs(inputUrl, shouldStop) {
 
   const plylstSeq = seqMatch[1];
   const referer   = `https://www.melon.com/mymusic/playlist/mymusicplaylistview_inform.htm?plylstSeq=${plylstSeq}`;
-  const listUrl   = page => `https://www.melon.com/mymusic/playlist/mymusicplaylistview_listSong.htm?plylstSeq=${plylstSeq}&startIndex=${(page - 1) * PAGE_SIZE + 1}&pageSize=${PAGE_SIZE}`;
+  const pageUrl   = page => `https://www.melon.com/mymusic/playlist/mymusicplaylistview_listPagingSong.htm?plylstSeq=${plylstSeq}&startIndex=${(page - 1) * PAGE_SIZE + 1}&pageSize=${PAGE_SIZE}`;
 
-  const seenKeys = new Set();
-  const songs    = [];
+  const songs = [];
 
   for (let page = 1; ; page++) {
     if (shouldStop()) break;
     broadcastProgress({ step: `${page}페이지 로딩 중...` });
 
     try {
-      const resp      = await bgFetch(listUrl(page), { headers: { ...headers, Referer: referer } });
+      const resp      = await bgFetch(pageUrl(page), { headers: { ...headers, Referer: referer } });
       const pageSongs = parseMelonHtml(resp.text);
 
       if (!pageSongs.length) break;
-
-      let newCount = 0;
-      for (const song of pageSongs) {
-        const key = `${song.title}||${song.artist}`;
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
-          songs.push(song);
-          newCount++;
-        }
-      }
-
-      // Melon은 마지막 페이지를 앞 곡으로 패딩하므로 신곡이 0이면 종료
-      if (newCount === 0) break;
+      songs.push(...pageSongs);
+      if (pageSongs.length < PAGE_SIZE) break;
     } catch (e) {
       broadcastProgress({ log: `${page}페이지 실패: ${e.message}`, logType: 'err' });
       break;
