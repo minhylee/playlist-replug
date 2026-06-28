@@ -33,31 +33,39 @@ export async function fetchMelonSongs(inputUrl, shouldStop) {
   const referer   = `https://www.melon.com/mymusic/playlist/mymusicplaylistview_inform.htm?plylstSeq=${plylstSeq}`;
   const listUrl   = page => `https://www.melon.com/mymusic/playlist/mymusicplaylistview_listSong.htm?plylstSeq=${plylstSeq}&startIndex=${(page - 1) * PAGE_SIZE + 1}&pageSize=${PAGE_SIZE}`;
 
-  broadcastProgress({ step: `플레이리스트 ID: ${plylstSeq} — 1페이지 로딩 중...` });
-  const first      = await bgFetch(listUrl(1), { headers: { ...headers, Referer: referer } });
-  const totalMatch = first.text.match(/수록곡\s*<span[^>]*>\((\d+)\)/);
-  const totalCount = totalMatch ? parseInt(totalMatch[1], 10) : PAGE_SIZE;
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const seenKeys = new Set();
+  const songs    = [];
 
-  broadcastProgress({ log: `총 ${totalCount}곡 (${totalPages}페이지)`, logType: 'info' });
-
-  const songs = parseMelonHtml(first.text);
-  broadcastProgress({ step: `1/${totalPages}페이지: ${songs.length}곡` });
-
-  for (let page = 2; page <= totalPages; page++) {
+  for (let page = 1; ; page++) {
     if (shouldStop()) break;
-    broadcastProgress({ step: `${page}/${totalPages}페이지 로딩 중...` });
+    broadcastProgress({ step: `${page}페이지 로딩 중...` });
+
     try {
       const resp      = await bgFetch(listUrl(page), { headers: { ...headers, Referer: referer } });
       const pageSongs = parseMelonHtml(resp.text);
-      broadcastProgress({ step: `${page}/${totalPages}페이지: ${pageSongs.length}곡` });
-      songs.push(...pageSongs);
+
+      if (!pageSongs.length) break;
+
+      let newCount = 0;
+      for (const song of pageSongs) {
+        const key = `${song.title}||${song.artist}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          songs.push(song);
+          newCount++;
+        }
+      }
+
+      // Melon은 마지막 페이지를 앞 곡으로 패딩하므로 신곡이 0이면 종료
+      if (newCount === 0) break;
     } catch (e) {
       broadcastProgress({ log: `${page}페이지 실패: ${e.message}`, logType: 'err' });
+      break;
     }
+
     await sleep(300);
   }
 
-  // Melon이 마지막 페이지에서 부족한 곡을 앞에서 채워 50개를 맞추므로 총 곡수로 잘라냄
-  return songs.slice(0, totalCount);
+  broadcastProgress({ log: `총 ${songs.length}곡 가져옴`, logType: 'info' });
+  return songs;
 }
