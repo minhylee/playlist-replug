@@ -93,7 +93,7 @@ async function ytApiFn(action, params) {
            + (titleMatch                                  ?  200 : 0)
            + (hintMatch                                   ?   50 : 0)
            + (artistMatch && isVerif(v)                   ?  150 : 0)  // 미검증 팬채널 오탐 방지
-           + (isArtist(v) && !artistMatch && !hasMv(v)    ? -200 : 0)  // MV는 신뢰, 커버 아티스트 비MV만 패널티
+           + (isArtist(v) && !artistMatch && !hasMv(v)    ? -150 : 0)  // MV는 신뢰, 커버 아티스트 비MV만 패널티
            + (liveRe.test(v.title?.runs?.[0]?.text || '') ? -150 : 0); // 라이브/방송 영상 감점
     };
 
