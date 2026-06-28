@@ -52,7 +52,7 @@ export async function runJob({ melonUrl, mode, playlistName, playlistUrl, tabId 
 
   _isJobRunning = false;
   await broadcastProgress({ done: true, running: false, added, failed, playlistId });
-  await chrome.storage.local.remove(['jobState', 'inputState']);
+  // jobState는 유지 — 팝업 재오픈 시 로그 복원용. 다음 작업 시작 시 initState가 덮어씀
 }
 
 async function resolvePlaylist(tabId, mode, playlistName, playlistUrl) {

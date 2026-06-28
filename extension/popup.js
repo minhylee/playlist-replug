@@ -179,6 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await chrome.storage.local.set({ inputState: { platform: platformSelect.value, melonUrl, mode, playlistName, playlistUrl } });
 
+    await chrome.storage.local.remove('jobState');
     setJobActive(true);
     progressEl.style.display    = 'block';
     playlistLinkEl.style.display = 'none';
