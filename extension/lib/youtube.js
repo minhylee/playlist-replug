@@ -62,6 +62,7 @@ async function ytApiFn(action, params) {
     if (!items.length) return { ok: true, data: null };
 
     const mvRe     = /official\s*(mv|m\/v|video|music\s*video)|[\[(](mv|m\/v)[)\]]|\bm\/v\b|\bmv\b|뮤직\s*비디오|뮤비/i;
+    const liveRe   = /\blive\b|\bstage\b|콘서트|공연|음악방송|뮤직뱅크|인기가요|엠카운트다운|쇼챔피언|music.?core|inkigayo|m\.?countdown|show.?champion|showcase|컴백\s*무대|\[comeback/i;
     const badge    = v => v.ownerBadges?.[0]?.metadataBadgeRenderer?.style || '';
     const isTopic  = v => v.ownerText?.runs?.[0]?.text?.endsWith('- Topic');
     const isArtist = v => badge(v) === 'BADGE_STYLE_TYPE_VERIFIED_ARTIST';
@@ -86,14 +87,15 @@ async function ytApiFn(action, params) {
 
       if (!titleMatch && !hintMatch) return -Infinity; // 제목 무관 영상 제외
 
-      return (isTopic(v)                   ? 1000 : 0)
-           + (isArtist(v)                  ?  100 : 0)
-           + (isVerif(v)                   ?   50 : 0)
-           + (hasMv(v)                     ?  100 : 0)
-           + (titleMatch                   ?  200 : 0)
-           + (hintMatch                    ?   50 : 0)
-           + (artistMatch                  ?  150 : 0)
-           + (isArtist(v) && !artistMatch  ? -200 : 0); // 커버 아티스트 패널티 (서브유닛 등 오탐 고려해 -Infinity 대신)
+      return (isTopic(v)                                    ? 1000 : 0)
+           + (isArtist(v)                                 ?  100 : 0)
+           + (isVerif(v)                                  ?   50 : 0)
+           + (hasMv(v)                                    ?  100 : 0)
+           + (titleMatch                                  ?  200 : 0)
+           + (hintMatch                                   ?   50 : 0)
+           + (artistMatch && isVerif(v)                   ?  150 : 0)  // 미검증 팬채널 오탐 방지
+           + (isArtist(v) && !artistMatch && !hasMv(v)    ? -200 : 0)  // MV는 신뢰, 커버 아티스트 비MV만 패널티
+           + (liveRe.test(v.title?.runs?.[0]?.text || '') ? -150 : 0); // 라이브/방송 영상 감점
     };
 
     const scored = items.map(v => ({ v, s: score(v) })).filter(x => x.s > -Infinity).sort((a, b) => b.s - a.s);
