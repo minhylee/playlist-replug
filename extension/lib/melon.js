@@ -5,7 +5,7 @@ const PAGE_SIZE = 50;
 const sleep     = ms => new Promise(r => setTimeout(r, ms));
 
 async function bgFetch(url, options = {}) {
-  const resp = await fetch(url, options);
+  const resp = await fetch(url, { cache: 'no-store', ...options });
   return { ok: resp.ok, status: resp.status, url: resp.url, text: await resp.text() };
 }
 
@@ -41,7 +41,7 @@ export async function fetchMelonSongs(inputUrl, shouldStop) {
 
     try {
       const resp      = await bgFetch(pageUrl(page), { headers: { ...headers, Referer: referer } });
-      const pageSongs = parseMelonHtml(resp.text);
+const pageSongs = parseMelonHtml(resp.text);
 
       if (!pageSongs.length) break;
       songs.push(...pageSongs);
